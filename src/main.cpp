@@ -1,29 +1,3 @@
-/* Copyright (c) 2019, NVIDIA CORPORATION. All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- *  * Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- *  * Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *  * Neither the name of NVIDIA CORPORATION nor the names of its
- *    contributors may be used to endorse or promote products derived
- *    from this software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS ``AS IS'' AND ANY
- * EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
- * PURPOSE ARE DISCLAIMED.  IN NO EVENT SHALL THE COPYRIGHT OWNER OR
- * CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
- * EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
- * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
- * PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY
- * OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
- * (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
- * OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
- */
 
 #if defined(WIN32) || defined(_WIN32) || defined(WIN64) || defined(_WIN64)
 #define WINDOWS_LEAN_AND_MEAN
@@ -49,19 +23,16 @@
 
 bool printfNPPinfo(int argc, char *argv[])
 {
+    // NPP Library version
     const NppLibraryVersion *libVer = nppGetLibVersion();
+    printf("NPP Library Version %d.%d.%d\n", libVer->major, libVer->minor, libVer->build);
 
-    printf("NPP Library Version %d.%d.%d\n", libVer->major, libVer->minor,
-           libVer->build);
-
+    // CUDA Driver and Runtime version
     int driverVersion, runtimeVersion;
     cudaDriverGetVersion(&driverVersion);
     cudaRuntimeGetVersion(&runtimeVersion);
-
-    printf("  CUDA Driver  Version: %d.%d\n", driverVersion / 1000,
-           (driverVersion % 100) / 10);
-    printf("  CUDA Runtime Version: %d.%d\n", runtimeVersion / 1000,
-           (runtimeVersion % 100) / 10);
+    printf("  CUDA Driver  Version: %d.%d\n", driverVersion / 1000, (driverVersion % 100) / 10);
+    printf("  CUDA Runtime Version: %d.%d\n", runtimeVersion / 1000, (runtimeVersion % 100) / 10);
 
     // Min spec is SM 1.0 devices
     bool bVal = checkCudaCapabilities(1, 0);
@@ -70,141 +41,193 @@ bool printfNPPinfo(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
-    printf("%s Starting...\n\n", argv[0]);
+  printf("Starting image Gauss filter program\n\n");
 
-    try
+  try
+  {
+    // Input file name
+    std::string sFilename;
+    char *filePath;
+
+    // Find and select desired CUDA device
+    findCudaDevice(argc, (const char **)argv);
+
+    // Show NPP versions
+    if (printfNPPinfo(argc, argv) == false)
     {
-        std::string sFilename;
-        char *filePath;
-
-        findCudaDevice(argc, (const char **)argv);
-
-        if (printfNPPinfo(argc, argv) == false)
-        {
-            exit(EXIT_SUCCESS);
-        }
-
-        if (checkCmdLineFlag(argc, (const char **)argv, "input"))
-        {
-            getCmdLineArgumentString(argc, (const char **)argv, "input", &filePath);
-        }
-        else
-        {
-            filePath = sdkFindFilePath("Lena.pgm", argv[0]);
-        }
-
-        if (filePath)
-        {
-            sFilename = filePath;
-        }
-        else
-        {
-            sFilename = "Lena.pgm";
-        }
-
-        // if we specify the filename at the command line, then we only test
-        // sFilename[0].
-        int file_errors = 0;
-        std::ifstream infile(sFilename.data(), std::ifstream::in);
-
-        if (infile.good())
-        {
-            std::cout << "nppiRotate opened: <" << sFilename.data()
-                      << "> successfully!" << std::endl;
-            file_errors = 0;
-            infile.close();
-        }
-        else
-        {
-            std::cout << "nppiRotate unable to open: <" << sFilename.data() << ">"
-                      << std::endl;
-            file_errors++;
-            infile.close();
-        }
-
-        if (file_errors > 0)
-        {
-            exit(EXIT_FAILURE);
-        }
-
-        std::string sResultFilename = sFilename;
-
-        std::string::size_type dot = sResultFilename.rfind('.');
-
-        if (dot != std::string::npos)
-        {
-            sResultFilename = sResultFilename.substr(0, dot);
-        }
-
-        sResultFilename += "_rotate.pgm";
-
-        if (checkCmdLineFlag(argc, (const char **)argv, "output"))
-        {
-            char *outputFilePath;
-            getCmdLineArgumentString(argc, (const char **)argv, "output",
-                                     &outputFilePath);
-            sResultFilename = outputFilePath;
-        }
-
-        // declare a host image object for an 8-bit grayscale image
-        npp::ImageCPU_8u_C1 oHostSrc;
-        // load gray-scale image from disk
-        npp::loadImage(sFilename, oHostSrc);
-        // declare a device image and copy construct from the host image,
-        // i.e. upload host to device
-        npp::ImageNPP_8u_C1 oDeviceSrc(oHostSrc);
-
-        // create struct with the ROI size
-        NppiSize oSrcSize = {(int)oDeviceSrc.width(), (int)oDeviceSrc.height()};
-        NppiPoint oSrcOffset = {0, 0};
-        NppiSize oSizeROI = {(int)oDeviceSrc.width(), (int)oDeviceSrc.height()};
-
-        // Calculate the bounding box of the rotated image
-        NppiRect oBoundingBox;
-        double angle = 45.0; // Rotation angle in degrees
-        NPP_CHECK_NPP(nppiGetRotateBound(oSrcSize, angle, &oBoundingBox));
-
-        // allocate device image for the rotated image
-        npp::ImageNPP_8u_C1 oDeviceDst(oBoundingBox.width, oBoundingBox.height);
-
-        // Set the rotation point (center of the image)
-        NppiPoint oRotationCenter = {(int)(oSrcSize.width / 2), (int)(oSrcSize.height / 2)};
-
-        // run the rotation
-        NPP_CHECK_NPP(nppiRotate_8u_C1R(
-            oDeviceSrc.data(), oSrcSize, oDeviceSrc.pitch(), oSrcOffset,
-            oDeviceDst.data(), oDeviceDst.pitch(), oBoundingBox, angle, oRotationCenter,
-            NPPI_INTER_NN));
-
-        // declare a host image for the result
-        npp::ImageCPU_8u_C1 oHostDst(oDeviceDst.size());
-        // and copy the device result data into it
-        oDeviceDst.copyTo(oHostDst.data(), oHostDst.pitch());
-
-        saveImage(sResultFilename, oHostDst);
-        std::cout << "Saved image: " << sResultFilename << std::endl;
-
-        nppiFree(oDeviceSrc.data());
-        nppiFree(oDeviceDst.data());
-
-        exit(EXIT_SUCCESS);
-    }
-    catch (npp::Exception &rException)
-    {
-        std::cerr << "Program error! The following exception occurred: \n";
-        std::cerr << rException << std::endl;
-        std::cerr << "Aborting." << std::endl;
-
-        exit(EXIT_FAILURE);
-    }
-    catch (...)
-    {
-        std::cerr << "Program error! An unknown type of exception occurred. \n";
-        std::cerr << "Aborting." << std::endl;
-
-        exit(EXIT_FAILURE);
-        return -1;
+      exit(EXIT_SUCCESS);
     }
 
-    return 0;
+    // Check input file argument
+    if (checkCmdLineFlag(argc, (const char **)argv, "input"))
+    {
+      getCmdLineArgumentString(argc, (const char **)argv, "input", &filePath);
+    }
+    else
+    {
+      // Default test file
+      filePath = sdkFindFilePath("Lena.pgm", argv[0]);
+    }
+
+    if (filePath)
+    {
+      sFilename = filePath;
+    }
+    else
+    {
+      sFilename = "Lena.pgm";
+    }
+    printf("\nSource image file: %s\n", sFilename.data());
+
+    // Check input image file
+    std::ifstream infile(sFilename.data(), std::ifstream::in);
+    if (infile.good())
+    {
+      printf("Check source image file: success\n");
+      infile.close();
+    }
+    else
+    {
+      printf("Check source image file: failed\n");
+      infile.close();
+      exit(EXIT_FAILURE);
+    }
+
+    // Construct output filename automatically
+    std::string sResultFilename = sFilename;
+    std::string::size_type dot = sResultFilename.rfind('.');
+    if (dot != std::string::npos)
+    {
+      sResultFilename = sResultFilename.substr(0, dot);
+    }
+    sResultFilename += "_gaussian.pgm";
+
+    // Check and apply explicit output filename argument
+    if (checkCmdLineFlag(argc, (const char **)argv, "output"))
+    {
+      char *outputFilePath;
+      getCmdLineArgumentString(argc, (const char **)argv, "output", &outputFilePath);
+      sResultFilename = outputFilePath;
+    }
+    printf("Destination image file: %s\n", sResultFilename.data());
+
+    // Check and apply gauss filter mask size argument
+    NppiMaskSize gaussMaskSize = NPP_MASK_SIZE_11_X_11;
+    if (checkCmdLineFlag(argc, (const char **)argv, "mask"))
+    {
+      char *maskSize;
+      getCmdLineArgumentString(argc, (const char **)argv, "mask", &maskSize);
+      std::string sGaussMaskSizeStr{maskSize};
+
+      // 3 X 3 filter mask size, leaving space for more N X 1 type enum values.
+      if (sGaussMaskSizeStr == "3")
+      {
+        gaussMaskSize = NppiMaskSize::NPP_MASK_SIZE_3_X_3;
+        printf("Mask size: 3 X 3\n");
+      }
+      // 5 X 5 filter mask size.
+      else if (sGaussMaskSizeStr == "5")
+      {
+        gaussMaskSize = NppiMaskSize::NPP_MASK_SIZE_5_X_5;
+        printf("Mask size: 5 X 5\n");
+      }
+      // 7 X 7 filter mask size.
+      else if (sGaussMaskSizeStr == "7")
+      {
+        gaussMaskSize = NppiMaskSize::NPP_MASK_SIZE_7_X_7;
+        printf("Mask size: 7 X 7\n");
+      }
+      // 9 X 9 filter mask size.
+      else if (sGaussMaskSizeStr == "9")
+      {
+        gaussMaskSize = NppiMaskSize::NPP_MASK_SIZE_9_X_9;
+        printf("Mask size: 9 X 9\n");
+      }
+      // 11 X 11 filter mask size.
+      else if (sGaussMaskSizeStr == "11")
+      {
+        gaussMaskSize = NppiMaskSize::NPP_MASK_SIZE_11_X_11;
+        printf("Mask size: 11 X 11\n");
+      }
+      // 13 X 13 filter mask size.
+      else if (sGaussMaskSizeStr == "13")
+      {
+        gaussMaskSize = NppiMaskSize::NPP_MASK_SIZE_13_X_13;
+        printf("Mask size: 13 X 13\n");
+      }
+      // 15 X 15 filter mask size.
+      else if (sGaussMaskSizeStr == "15")
+      {
+        gaussMaskSize = NppiMaskSize::NPP_MASK_SIZE_15_X_15;
+        printf("Mask size: 15 X 15\n");
+      }
+    }
+
+    // CPU source image data
+    npp::ImageCPU_8u_C1 hostSrc;
+
+    // Load input image from filesystem
+    printf("Load source image\n");
+    npp::loadImage(sFilename, hostSrc);
+
+    // GPU source image data
+    npp::ImageNPP_8u_C1 deviceSrc(hostSrc);
+
+    // Image size
+    const NppiSize srcSize = {(int)deviceSrc.width(), (int)deviceSrc.height()};
+    const NppiPoint srcOffset = {0, 0};
+    const NppiSize roiSize = {(int)deviceSrc.width(), (int)deviceSrc.height()};
+
+    // GPU result image data
+    npp::ImageNPP_8u_C1 deviceDst(roiSize.width, roiSize.height);
+
+    // Apply Single channel 8-bit unsigned Gauss filter with border control
+    printf("Apply Gauss filter\n");
+    NPP_CHECK_NPP(nppiFilterGaussBorder_8u_C1R(deviceSrc.data(),
+                                               deviceSrc.pitch(),
+                                               srcSize,
+                                               srcOffset,
+                                               deviceDst.data(),
+                                               deviceDst.pitch(),
+                                               roiSize,
+                                               gaussMaskSize,
+                                               NppiBorderType::NPP_BORDER_REPLICATE));
+
+    // CPU result image data
+    npp::ImageCPU_8u_C1 hostDst(deviceDst.size());
+
+    // Copy result data from GPU
+    printf("Copy result from GPU\n");
+    deviceDst.copyTo(hostDst.data(), hostDst.pitch());
+
+    // Save result image to filesystem
+    printf("Save destination image\n");
+    saveImage(sResultFilename, hostDst);
+
+    // Free allocated data
+    nppiFree(deviceSrc.data());
+    nppiFree(deviceDst.data());
+    nppiFree(hostSrc.data());
+    nppiFree(hostDst.data());
+
+    exit(EXIT_SUCCESS);
+  }
+  catch (npp::Exception &rException)
+  {
+    std::cerr << "Program error! The following exception occurred: \n";
+    std::cerr << rException << std::endl;
+    std::cerr << "Aborting." << std::endl;
+
+    exit(EXIT_FAILURE);
+  }
+  catch (...)
+  {
+    std::cerr << "Program error! An unknow type of exception occurred. \n";
+    std::cerr << "Aborting." << std::endl;
+
+    exit(EXIT_FAILURE);
+    return -1;
+  }
+
+  return 0;
 }
