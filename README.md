@@ -1,8 +1,8 @@
-# Image Rotation using NVIDIA NPP with CUDA
+# Image Gaussian filter using NVIDIA NPP with CUDA
 
 ## Overview
 
-This project demonstrates the use of NVIDIA Performance Primitives (NPP) library with CUDA to perform image rotation. The goal is to utilize GPU acceleration to efficiently rotate a given image by a specified angle, leveraging the computational power of modern GPUs. The project is a part of the CUDA at Scale for the Enterprise course and serves as a template for understanding how to implement basic image processing operations using CUDA and NPP.
+This project demonstrates the use of NVIDIA Performance Primitives (NPP) library with CUDA to perform Gaussion filter with different mask sizes. The goal is to utilize GPU acceleration to efficiently rotate a given image by a specified angle, leveraging the computational power of modern GPUs. The project is a part of the CUDA at Scale for the Enterprise course and serves as a template for understanding how to implement basic image processing operations using CUDA and NPP.
 
 ## Code Organization
 
@@ -102,13 +102,13 @@ Copy code
 make run
 ```
 
-This command will execute the compiled binary, rotating the input image (Lena.png) by 45 degrees, and save the result as Lena_rotated.png in the data/ directory.
+This command will execute the compiled binary, apply Gauss filter (with 11x11 mask size) on the input image (Lena.pgm), and save the result image as Lena_gaussian.pgm in the data/ directory.
 
-If you wish to run the binary directly with custom input/output files, you can use:
+If you wish to run the binary directly with custom input/output files with custom Gauss filter mask sizes, you can use:
 
 ```bash
 - Copy code
-./bin/imageRotationNPP --input data/Lena.png --output data/Lena_rotated.png
+./bin/gaussFilter --input data/Lena.pgm --output data/Lena_gaussia_9x9.pgm -mask=9
 ```
 
 - Cleaning Up
